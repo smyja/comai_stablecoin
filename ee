@@ -1,0 +1,17 @@
+.
+├── README.md
+├── artifacts
+├── contracts
+│   └── MockUSDT.sol
+├── ee
+├── foundry.toml
+├── hardhat.config.js
+├── package-lock.json
+├── package.json
+├── scripts
+│   └── DeployMockUSDT.s.sol
+└── src
+    ├── compile.js
+    └── deploy.js
+
+5 directories, 10 files
