@@ -1,0 +1,2 @@
+Deployer address: 5H4MnbbtbAPcwfkudSMV7KrDULvqPc5ZURWmxAmhBw6RkpUo
+Balance: 9979799985798 (free), 0 (reserved)

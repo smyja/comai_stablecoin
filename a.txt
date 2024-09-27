@@ -1,2 +1,2 @@
-Deployer address: 5H4MnbbtbAPcwfkudSMV7KrDULvqPc5ZURWmxAmhBw6RkpUo
-Balance: 9979799985798 (free), 0 (reserved)
+Ethereum-compatible address: 0xec46901304adc0e64110f2a96d182c4d25f46269
+Contract deployment initiated successfully
