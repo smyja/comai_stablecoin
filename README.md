@@ -35,7 +35,7 @@ Before you begin, ensure you have the following installed:
 
    ```bash
    git clone https://github.com/smyja/comai_stablecoin.git
-   cd your-repo-name
+   cd comai_stablecoin
    ```
 
 2. **Install dependencies:**
