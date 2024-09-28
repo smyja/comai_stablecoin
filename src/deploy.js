@@ -1,8 +1,8 @@
 require('dotenv').config();
 const { ApiPromise, WsProvider } = require('@polkadot/api');
 const { Keyring } = require('@polkadot/keyring');
-const { keccakAsU8a } = require('@polkadot/util-crypto'); 
-const { u8aToHex } = require('@polkadot/util'); 
+const { keccakAsU8a } = require('@polkadot/util-crypto');
+const { u8aToHex } = require('@polkadot/util');
 const fs = require('fs');
 
 // Load ABI and Bytecode from the compiled contract
@@ -16,54 +16,71 @@ async function deployContract() {
   const deployer = keyring.addFromUri(process.env.MNEMONIC);
 
   // Hash the Substrate public key using Keccak256 and convert to H160
-  const keccakHash = keccakAsU8a(deployer.publicKey); // Keccak-256 hash of the public key
-  const ethAddress = u8aToHex(keccakHash.slice(-20)); // Use the last 20 bytes of the Keccak hash
-
+  const keccakHash = keccakAsU8a(deployer.publicKey);
+  const ethAddress = u8aToHex(keccakHash.slice(-20));
   console.log(`Ethereum-compatible address: ${ethAddress}`);
 
   // Fetch the nonce (transaction count) from the Substrate account
   const { nonce } = await api.query.system.account(deployer.address);
 
   // Use BigInt for gas-related values
-  const gasLimit = BigInt(1000000); // Lower the gas limit to 1 million gas units
-  const maxFeePerGas = BigInt(500000000); // 0.5 gwei
-  const maxPriorityFeePerGas = null; // Set priority fee to null  
+  const gasLimit = BigInt(10000000); // 4 million gas units
+  const maxFeePerGas = BigInt(100000000000); // 100 gwei
+  const maxPriorityFeePerGas = BigInt(20000000000); // 20 gwei
   const value = BigInt(0); // No ETH sent with the contract deployment
   const accessList = []; // No access list
 
-  try {
-    // Use the EVM pallet to create the contract
-    const unsub = await api.tx.evm
+  return new Promise((resolve, reject) => {
+    api.tx.evm
       .create(
-        ethAddress, // Source address (in H160 format)
-        bytecode, // Contract bytecode
-        value, // Value to transfer to contract (0)
-        gasLimit, // Gas limit
-        maxFeePerGas, // Max fee per gas (BigInt)
-        maxPriorityFeePerGas, // Max priority fee per gas (set to `None`)
-        nonce.toBigInt(), // Nonce fetched from system.account
-        accessList // Empty access list
+        ethAddress,
+        bytecode,
+        value,
+        gasLimit,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+        nonce.toBigInt(),
+        accessList
       )
       .signAndSend(deployer, ({ status, events }) => {
+        console.log(`Transaction status: ${status.type}`);
+
+        events.forEach(({ event: { method, section, data } }) => {
+          console.log(`Event: ${section}.${method} - Data: ${data.toString()}`);
+          if (section === 'evm' && method === 'Created') {
+            const [contractAddress] = data;
+            console.log('Contract deployed at:', contractAddress.toString());
+          }
+        });
+
         if (status.isInBlock) {
-          console.log('Contract included in block:', status.asInBlock.toHex());
+          console.log('Transaction included in block:', status.asInBlock.toHex());
         } else if (status.isFinalized) {
-          console.log('Contract successfully finalized');
-          events.forEach(({ event }) => {
-            if (event.method === 'Created') {
-              console.log('Contract deployed at:', event.data.toHuman());
-            }
-          });
+          console.log('Transaction finalized in block:', status.asFinalized.toHex());
+          resolve('Contract deployment completed');
         }
+      })
+      .catch((error) => {
+        console.error('Deployment failed:', error);
+        reject(error);
       });
-
-    console.log('Contract deployment initiated successfully');
-    unsub();
-  } catch (error) {
-    console.error('Deployment failed:', error);
-  }
-
-  await api.disconnect();
+  });
 }
 
-deployContract().catch(console.error);
+async function main() {
+  try {
+    console.log('Starting contract deployment...');
+    await deployContract();
+    console.log('Deployment process completed.');
+  } catch (error) {
+    console.error('An error occurred:', error);
+  } finally {
+    // Ensure disconnection even if an error occurs
+    if (global.api) {
+      await global.api.disconnect();
+      console.log('Disconnected from the node');
+    }
+  }
+}
+
+main().catch(console.error);
