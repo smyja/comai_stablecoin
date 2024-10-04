@@ -1,12 +1,28 @@
 require('dotenv').config();
 const { ApiPromise, WsProvider } = require('@polkadot/api');
 const { Keyring } = require('@polkadot/keyring');
-const { keccakAsU8a } = require('@polkadot/util-crypto');
 const { u8aToHex } = require('@polkadot/util');
 const fs = require('fs');
 
 // Load ABI and Bytecode from the compiled contract
 const { abi, bytecode } = JSON.parse(fs.readFileSync('MockUSDT.json', 'utf8'));
+
+/**
+ * Converts a Substrate AccountId to an Ethereum H160 address.
+ * This example takes the last 20 bytes of the AccountId.
+ * Adjust the conversion logic if your network uses a different mapping.
+ * 
+ * @param {Uint8Array} accountIdBytes - The Substrate AccountId bytes (32 bytes).
+ * @returns {string} - The Ethereum address (20 bytes) in hex format.
+ */
+function substrateToEthAddress(accountIdBytes) {
+  if (accountIdBytes.length !== 32) {
+    throw new Error('Invalid AccountId length');
+  }
+  // Extract the last 20 bytes
+  const ethAddressBytes = accountIdBytes.slice(-20);
+  return u8aToHex(ethAddressBytes);
+}
 
 async function deployContract() {
   const wsProvider = new WsProvider(process.env.RPC_URL);
@@ -14,39 +30,51 @@ async function deployContract() {
 
   console.log('Connected to node:', await api.rpc.system.chain());
 
+  // Use 'sr25519' key type for Substrate development accounts
   const keyring = new Keyring({ type: 'sr25519' });
-  const deployer = keyring.addFromUri(process.env.MNEMONIC);
+
+  // Verify PRIVATE_KEY is defined
+  if (!process.env.PRIVATE_KEY) {
+    throw new Error('PRIVATE_KEY environment variable is not set.');
+  }
+
+  // Add the account from the mnemonic or private key
+  const deployer = keyring.addFromUri(process.env.PRIVATE_KEY);
   console.log('Deploying from account:', deployer.address);
 
-  // Hash the Substrate public key using Keccak256 and convert to H160
-  const keccakHash = keccakAsU8a(deployer.publicKey);
-  const ethAddress = u8aToHex(keccakHash.slice(-20));
-  console.log(`Ethereum-compatible address: ${ethAddress}`);
+  // Debug: Log deployer's publicKey length
+  console.log('Deployer public key length:', deployer.publicKey.length);
+  console.log('Deployer public key:', u8aToHex(deployer.publicKey));
 
-  // Fetch the nonce (transaction count) from the Substrate account
-  const { nonce } = await api.query.system.account(deployer.address);
+  // Convert Substrate AccountId to Ethereum H160 address
+  const ethAddress = substrateToEthAddress(deployer.publicKey);
+  console.log('Converted Ethereum address:', ethAddress);
+
+  // Fetch the nonce (transaction count)
+  const nonce = await api.rpc.system.accountNextIndex(deployer.address);
   console.log('Current nonce:', nonce.toString());
 
-  // Use BigInt for gas-related values
-  const gasLimit = BigInt(3000000); // Increased gas limit
-  const maxFeePerGas = BigInt(1000000000000); // 1000 Gwei
-  const maxPriorityFeePerGas = BigInt(1000000000); // 1 Gwei
+  // Use BigInt for gas-related values, ensure values are within appropriate ranges
+  const gasLimit = BigInt(3000000); // Adjust as needed
+  const maxFeePerGas = BigInt(2000000000); // 2 Gwei (increased from 1 Gwei)
+  const maxPriorityFeePerGas = BigInt(2000000000); // 2 Gwei (increased from 1 Gwei)
   const value = BigInt(0); // No ETH sent with the contract deployment
   const accessList = []; // No access list
 
+  // Create the EVM deployment extrinsic
   const evmCall = api.tx.evm.create(
-    ethAddress,
-    bytecode,
-    value,
-    gasLimit,
-    maxFeePerGas,
-    maxPriorityFeePerGas,
-    nonce.toBigInt(),
-    accessList
+    ethAddress,                     // Ethereum-compatible address (H160)
+    bytecode,                       // Contract bytecode
+    value,                          // ETH value to send
+    gasLimit,                       // Gas limit
+    maxFeePerGas,                  // Max fee per gas (increased)
+    maxPriorityFeePerGas,          // Max priority fee per gas (increased)
+    BigInt(nonce),                 // Nonce
+    accessList                     // Access list
   );
-
+  
   return new Promise((resolve, reject) => {
-    evmCall.signAndSend(deployer, ({ status, events, dispatchError }) => {
+    evmCall.signAndSend(deployer, { signer: deployer }, ({ status, events, dispatchError }) => {
       console.log(`Transaction status: ${status.type}`);
 
       if (dispatchError) {
